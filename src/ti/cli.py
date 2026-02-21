@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import click
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -375,9 +376,19 @@ def classify(
 @app.command()
 def digest(
     period: str = typer.Option(
-        "weekly", "--period", "-p", help="Period: weekly or monthly"
+        "weekly",
+        "--period",
+        "-p",
+        help="Period: weekly or monthly",
+        click_type=click.Choice(["weekly", "monthly"]),
     ),
-    format: OutputFormat = _opt_format(),
+    format: OutputFormat = typer.Option(
+        "human",
+        "--format",
+        "-f",
+        help="Output format (human or json)",
+        click_type=click.Choice(["human", "json"]),
+    ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Show what would be digested"
     ),
