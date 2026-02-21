@@ -1,0 +1,11 @@
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+__pycache__/
+*.pyc
+.runs/
+twitter-tweets-*.json
+.env
+dist/
+*.egg-info/
