@@ -248,5 +248,63 @@ def latest(
     _print_output(output, format)
 
 
+@app.command()
+def classify(
+    batch_size: int = typer.Option(15, "--batch-size", "-b", help="Tweets per batch"),
+    retry_failed: bool = typer.Option(False, "--retry", help="Retry failed classifications"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be classified"),
+):
+    """Classify unclassified tweets using AI (codebridge + Haiku)."""
+    from ti.classify import get_unclassified, classify_batch
+    from ti.db import rebuild_fts
+
+    conn = _get_db()
+    tweets = get_unclassified(conn, retry_failed=retry_failed)
+
+    if not tweets:
+        console.print("[green]All tweets are classified![/green]")
+        conn.close()
+        return
+
+    if dry_run:
+        console.print(f"[bold]{len(tweets)} tweets to classify[/bold]")
+        for t in tweets[:5]:
+            console.print(f"  {t['id']} @{t['screen_name']}: {t['full_text'][:60]}...")
+        if len(tweets) > 5:
+            console.print(f"  ... and {len(tweets) - 5} more")
+        conn.close()
+        return
+
+    console.print(f"[bold]Classifying {len(tweets)} tweets in batches of {batch_size}...[/bold]")
+
+    total_classified = 0
+    total_errors = 0
+
+    for i in range(0, len(tweets), batch_size):
+        batch = tweets[i:i + batch_size]
+        batch_num = i // batch_size + 1
+        total_batches = (len(tweets) + batch_size - 1) // batch_size
+
+        console.print(f"\n[cyan]Batch {batch_num}/{total_batches}[/cyan] ({len(batch)} tweets)")
+
+        result = classify_batch(conn, batch)
+        total_classified += result.get("classified", 0)
+        total_errors += result.get("errors", 0)
+
+        if "error" in result:
+            console.print(f"  [red]Error: {result['error'][:100]}[/red]")
+        else:
+            console.print(
+                f"  [green]Classified: {result['classified']}[/green]"
+                f"  [red]Errors: {result['errors']}[/red]"
+            )
+
+    # Rebuild FTS after all batches
+    rebuild_fts(conn)
+
+    console.print(f"\n[bold green]Done![/bold green] {total_classified} classified, {total_errors} errors")
+    conn.close()
+
+
 if __name__ == "__main__":
     app()
