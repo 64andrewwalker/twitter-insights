@@ -372,5 +372,119 @@ def classify(
     conn.close()
 
 
+@app.command()
+def digest(
+    period: str = typer.Option(
+        "weekly", "--period", "-p", help="Period: weekly or monthly"
+    ),
+    format: OutputFormat = _opt_format(),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would be digested"
+    ),
+    no_open: bool = typer.Option(False, "--no-open", help="Don't open browser"),
+    save: bool = typer.Option(False, "--save", help="Save to digests/ directory"),
+    engine: str = typer.Option("kimi-code", "--engine", "-e", help="codebridge engine"),
+    model: str = typer.Option("", "--model", "-m", help="Model name (engine-specific)"),
+):
+    """Generate a visual digest of recent tweets with AI commentary."""
+    from ti.digest import (
+        get_period_range,
+        get_period_label,
+        query_tweets_in_range,
+        group_by_category,
+        generate_ai_commentary,
+        assemble_digest_data,
+        render_digest_html,
+    )
+
+    conn = _get_db()
+
+    start, end = get_period_range(period)
+    start_str = start.isoformat()
+    end_str = end.isoformat()
+    label = get_period_label(period, start, end)
+
+    tweets = query_tweets_in_range(conn, start_str, end_str)
+
+    if not tweets:
+        console.print(f"[dim]No tweets found for {label}[/dim]")
+        conn.close()
+        raise typer.Exit()
+
+    # Check for unclassified tweets
+    unclassified = [t for t in tweets if t.get("primary_tag") is None]
+    if unclassified:
+        console.print(
+            f"[yellow]{len(unclassified)} unclassified tweets found. "
+            f"Running classification first...[/yellow]"
+        )
+        from ti.classify import get_unclassified, classify_batch
+        from ti.db import rebuild_fts
+
+        uc_tweets = get_unclassified(conn)
+        uc_ids = {t["id"] for t in unclassified}
+        uc_in_range = [t for t in uc_tweets if t["id"] in uc_ids]
+
+        if uc_in_range:
+            result = classify_batch(conn, uc_in_range, engine=engine, model=model)
+            rebuild_fts(conn)
+            console.print(
+                f"  [green]Classified {result.get('classified', 0)}[/green], "
+                f"[red]errors: {result.get('errors', 0)}[/red]"
+            )
+            tweets = query_tweets_in_range(conn, start_str, end_str)
+
+    groups = group_by_category(tweets)
+
+    if not groups:
+        console.print(f"[dim]No classified tweets for {label}[/dim]")
+        conn.close()
+        raise typer.Exit()
+
+    classified_count = sum(len(v) for v in groups.values())
+
+    if dry_run:
+        console.print(
+            f"[bold]{label}[/bold]: {len(tweets)} tweets ({classified_count} classified)"
+        )
+        for cat, cat_tweets in groups.items():
+            console.print(f"  {cat}: {len(cat_tweets)} tweets")
+        conn.close()
+        return
+
+    # Generate AI commentary
+    console.print(f"[cyan]Generating digest for {label}...[/cyan]")
+    ai_response = generate_ai_commentary(groups, label, engine=engine, model=model)
+
+    # Assemble data
+    data = assemble_digest_data(conn, period, start_str, end_str, ai_response)
+    conn.close()
+
+    # JSON format
+    if format == OutputFormat.JSON:
+        print(json.dumps(data, ensure_ascii=False, indent=2))
+        return
+
+    # Render HTML
+    import tempfile
+
+    period_slug = data["period"]
+    tmp_path = Path(tempfile.gettempdir()) / f"ti-digest-{period_slug}.html"
+    render_digest_html(data, tmp_path)
+
+    console.print(f"[green]Digest generated:[/green] {tmp_path}")
+
+    if save:
+        save_dir = Path.cwd() / "digests"
+        save_path = save_dir / f"{period_slug}.html"
+        render_digest_html(data, save_path)
+        console.print(f"[green]Saved to:[/green] {save_path}")
+
+    if not no_open:
+        import subprocess
+
+        subprocess.run(["open", str(tmp_path)], check=False)
+
+
 if __name__ == "__main__":
     app()

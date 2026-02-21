@@ -2,11 +2,17 @@
 import json
 import sqlite3
 from datetime import date
+from unittest.mock import patch
 
 import pytest
+from typer.testing import CliRunner
+
+from ti.cli import app
 from ti.db import init_db, rebuild_fts
 from ti.sync import sync_file
 from ti.digest import get_period_range, get_period_label
+
+runner = CliRunner()
 
 # --- Task 1: Date range tests ---
 
@@ -351,3 +357,148 @@ def test_render_html(tmp_path):
     assert "Test digest" in content
     assert "ReactDOM" in content
     assert "{{DATA}}" not in content
+
+
+# --- Task 7: AI call via codebridge ---
+
+
+def test_generate_ai_commentary_calls_codebridge(digest_db):
+    from ti.digest import (
+        generate_ai_commentary,
+        query_tweets_in_range,
+        group_by_category,
+    )
+
+    tweets = query_tweets_in_range(digest_db, "2026-02-16", "2026-02-22")
+    groups = group_by_category(tweets)
+
+    mock_result = {
+        "summary": json.dumps(
+            {
+                "tldr": "Mocked TL;DR",
+                "topics": [
+                    {
+                        "category": "claude-code",
+                        "headline": "Test",
+                        "commentary": "Test",
+                        "must_read": [],
+                        "vibe": "hot",
+                    }
+                ],
+                "hot_take": "Mocked hot take",
+            }
+        ),
+        "run_id": "test-run",
+        "output_path": None,
+    }
+
+    with patch("ti.classify._run_codebridge", return_value=mock_result) as mock_cb:
+        result = generate_ai_commentary(
+            groups, "2026-W08", engine="kimi-code", model=""
+        )
+        assert result["tldr"] == "Mocked TL;DR"
+        mock_cb.assert_called_once()
+        call_args = mock_cb.call_args
+        assert "ADHD" in call_args[0][0]
+
+
+# --- Task 8: CLI command tests ---
+
+
+def test_cli_digest_dry_run(digest_db, monkeypatch):
+    """Dry run should show tweet count without calling AI."""
+    monkeypatch.setattr("ti.cli._get_db", lambda: digest_db)
+    # Mock get_period_range to return the range containing our fixture tweets
+    monkeypatch.setattr(
+        "ti.digest.get_period_range",
+        lambda period, ref_date=None: (date(2026, 2, 16), date(2026, 2, 22)),
+    )
+    result = runner.invoke(app, ["digest", "--dry-run"])
+    assert result.exit_code == 0
+    assert "3" in result.output
+
+
+def test_cli_digest_json_format(digest_db, monkeypatch):
+    """JSON format should output valid JSON."""
+    monkeypatch.setattr("ti.cli._get_db", lambda: digest_db)
+    monkeypatch.setattr(
+        "ti.digest.get_period_range",
+        lambda period, ref_date=None: (date(2026, 2, 16), date(2026, 2, 22)),
+    )
+
+    mock_ai = {
+        "tldr": "Test",
+        "topics": [],
+        "hot_take": None,
+    }
+    with patch("ti.classify._run_codebridge") as mock_cb:
+        mock_cb.return_value = {
+            "summary": json.dumps(mock_ai),
+            "run_id": "test",
+            "output_path": None,
+        }
+        result = runner.invoke(app, ["digest", "--format", "json", "--no-open"])
+        assert result.exit_code == 0
+        # Output may contain rich console lines before JSON; find the JSON object
+        output = result.output
+        json_start = output.index("{")
+        parsed = json.loads(output[json_start:])
+        assert "tldr" in parsed
+        assert "topics" in parsed
+
+
+# --- Task 9: Integration smoke test ---
+
+
+def test_end_to_end_digest_html(digest_db, tmp_path):
+    """Full pipeline: query -> group -> mock AI -> assemble -> render HTML."""
+    from ti.digest import (
+        query_tweets_in_range,
+        group_by_category,
+        assemble_digest_data,
+        render_digest_html,
+    )
+
+    tweets = query_tweets_in_range(digest_db, "2026-02-16", "2026-02-22")
+    assert len(tweets) == 3
+
+    groups = group_by_category(tweets)
+    assert len(groups) >= 2
+
+    ai_response = {
+        "tldr": "本周 Claude Code 和 MCP 都很火",
+        "topics": [
+            {
+                "category": "claude-code",
+                "headline": "CC 社区在讨论工作流优化",
+                "commentary": "有意思的是 alice 和 charlie 都在聊这个话题",
+                "must_read": ["100"],
+                "vibe": "hot",
+            },
+            {
+                "category": "tools-and-ecosystem",
+                "headline": "MCP 最佳实践",
+                "commentary": "bob 分享了 MCP 的最佳实践",
+                "must_read": [],
+                "vibe": "steady",
+            },
+        ],
+        "hot_take": "CC + MCP 正在重新定义开发者工具链",
+    }
+
+    data = assemble_digest_data(
+        digest_db, "weekly", "2026-02-16", "2026-02-22", ai_response
+    )
+
+    assert data["stats"]["total_tweets"] == 3
+    assert len(data["topics"]) == 2
+    assert data["hot_take"] == "CC + MCP 正在重新定义开发者工具链"
+
+    out = tmp_path / "test-digest.html"
+    render_digest_html(data, out)
+    html = out.read_text()
+
+    assert "本周 Claude Code 和 MCP 都很火" in html
+    assert "CC 社区在讨论工作流优化" in html
+    assert "ReactDOM" in html
+    assert "{{DATA}}" not in html

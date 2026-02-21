@@ -238,6 +238,36 @@ def assemble_digest_data(
     }
 
 
+def generate_ai_commentary(
+    groups: dict[str, list[dict]],
+    period_label: str,
+    engine: str = "kimi-code",
+    model: str = "",
+) -> dict:
+    """Call AI via codebridge to generate digest commentary."""
+    from ti.classify import _run_codebridge
+
+    prompt = build_digest_prompt(groups, period_label)
+    result = _run_codebridge(prompt, engine=engine, model=model)
+
+    # Prefer full output.txt when available (codebridge >= 0.1.3)
+    output_text = None
+    run_id = result.get("run_id", "")
+    if run_id and result.get("output_path"):
+        output_file = (
+            Path(__file__).resolve().parent.parent.parent
+            / ".runs"
+            / run_id
+            / result["output_path"]
+        )
+        if output_file.exists():
+            output_text = output_file.read_text()
+    if not output_text:
+        output_text = result.get("summary", "")
+
+    return parse_digest_response(output_text)
+
+
 TEMPLATE_PATH = Path(__file__).parent / "templates" / "digest.html"
 
 
