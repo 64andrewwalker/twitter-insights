@@ -1,6 +1,5 @@
 import json
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -44,14 +43,44 @@ def _print_output(output: str, fmt: OutputFormat):
 
 @app.command()
 def sync(
-    file: Path = typer.Argument(..., help="Path to Twitter JSON export file"),
+    file: Path = typer.Argument(None, help="Path to Twitter JSON export file"),
+    dir: Path = typer.Option(None, "--dir", "-d", help="Import all *.json files from directory"),
 ):
-    """Import tweets from a JSON export file."""
+    """Import tweets from a JSON export file or directory."""
+    from ti.sync import sync_file
+
+    if dir is not None:
+        if not dir.is_dir():
+            console.print(f"[red]Not a directory: {dir}[/red]")
+            raise typer.Exit(1)
+        files = sorted(dir.glob("*.json"))
+        if not files:
+            console.print(f"[dim]No JSON files found in {dir}[/dim]")
+            return
+        conn = _get_db()
+        total_inserted = 0
+        total_updated = 0
+        for f in files:
+            result = sync_file(conn, f)
+            total_inserted += result["inserted"]
+            total_updated += result["updated"]
+            console.print(
+                f"  {f.name}: {result['inserted']} new, {result['updated']} updated"
+            )
+        conn.close()
+        console.print(
+            f"[green]Total:[/green] {total_inserted} new, {total_updated} updated "
+            f"from {len(files)} files"
+        )
+        return
+
+    if file is None:
+        console.print("[red]Provide a file path or use --dir[/red]")
+        raise typer.Exit(1)
+
     if not file.exists():
         console.print(f"[red]File not found: {file}[/red]")
         raise typer.Exit(1)
-
-    from ti.sync import sync_file
 
     conn = _get_db()
     result = sync_file(conn, file)

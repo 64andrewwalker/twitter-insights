@@ -6,7 +6,6 @@ import sqlite3
 from pathlib import Path
 
 from ti.taxonomy import TAXONOMY, ALL_TAGS
-from ti.db import rebuild_fts
 
 PROJECT_DIR = str(Path(__file__).resolve().parent.parent.parent)
 
