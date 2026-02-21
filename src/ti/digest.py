@@ -25,6 +25,8 @@ def get_period_range(period: str, ref_date: date | None = None) -> tuple[date, d
     """Return (start, end) dates for the given period containing ref_date."""
     if ref_date is None:
         ref_date = date.today()
+    if period not in ("weekly", "monthly"):
+        raise ValueError(f"Invalid period: {period}. Must be 'weekly' or 'monthly'.")
     if period == "monthly":
         start = ref_date.replace(day=1)
         last_day = calendar.monthrange(ref_date.year, ref_date.month)[1]
@@ -275,6 +277,8 @@ def render_digest_html(data: dict, output_path: Path) -> None:
     """Inject digest data into HTML template and write to output_path."""
     template = TEMPLATE_PATH.read_text(encoding="utf-8")
     data_json = json.dumps(data, ensure_ascii=False)
+    # Prevent </script> in tweet text from breaking the inline script block
+    data_json = data_json.replace("</", "<\\/")
     html = template.replace("{{DATA}}", data_json)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(html, encoding="utf-8")
