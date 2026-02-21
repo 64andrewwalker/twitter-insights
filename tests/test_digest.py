@@ -324,3 +324,30 @@ def test_assemble_digest_data(digest_db):
     assert len(cc_topic["tweets"]) == 2
     assert cc_topic["tweets"][0]["must_read"] is True
     assert cc_topic["tweets"][1]["must_read"] is False
+
+
+# --- Task 5-6: HTML template and renderer ---
+
+
+def test_render_html(tmp_path):
+    from ti.digest import render_digest_html
+
+    data = {
+        "period": "2026-W08",
+        "period_label": "2026-W08 (2月16日 - 2月22日)",
+        "generated_at": "2026-02-21T21:00:00",
+        "stats": {
+            "total_tweets": 3,
+            "total_authors": 2,
+            "date_range": ["2026-02-16", "2026-02-22"],
+        },
+        "tldr": "Test digest",
+        "hot_take": None,
+        "topics": [],
+    }
+    out_path = tmp_path / "digest.html"
+    render_digest_html(data, out_path)
+    content = out_path.read_text()
+    assert "Test digest" in content
+    assert "ReactDOM" in content
+    assert "{{DATA}}" not in content

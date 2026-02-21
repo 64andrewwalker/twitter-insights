@@ -236,3 +236,15 @@ def assemble_digest_data(
         "hot_take": ai_response.get("hot_take"),
         "topics": assembled_topics,
     }
+
+
+TEMPLATE_PATH = Path(__file__).parent / "templates" / "digest.html"
+
+
+def render_digest_html(data: dict, output_path: Path) -> None:
+    """Inject digest data into HTML template and write to output_path."""
+    template = TEMPLATE_PATH.read_text(encoding="utf-8")
+    data_json = json.dumps(data, ensure_ascii=False)
+    html = template.replace("{{DATA}}", data_json)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(html, encoding="utf-8")

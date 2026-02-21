@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Twitter Insights Digest</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        background: '#09090b',
+                        card: '#18181b',
+                        border: '#27272a',
+                        muted: '#a1a1aa',
+                    }
+                }
+            }
+        }
+    </script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script>window.__DIGEST_DATA__ = {{DATA}};</script>
+</head>
+<body class="bg-background text-zinc-100 min-h-screen">
+    <div id="root"></div>
+    <script type="text/babel">
+        const data = window.__DIGEST_DATA__;
+
+        function VibeBadge({ vibe }) {
+            const styles = {
+                hot: 'bg-red-500/20 text-red-400 border-red-500/30',
+                steady: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+                quiet: 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30',
+            };
+            const icons = { hot: '\u{1F525}', steady: '\u{1F4C8}', quiet: '\u{1F319}' };
+            return (
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs border ${styles[vibe] || styles.steady}`}>
+                    {icons[vibe]} {vibe}
+                </span>
+            );
+        }
+
+        function TweetCard({ tweet }) {
+            return (
+                <a href={tweet.url} target="_blank" rel="noopener noreferrer"
+                   className={`block p-4 rounded-lg border transition-colors hover:border-zinc-500
+                     ${tweet.must_read ? 'border-amber-500/50 bg-amber-500/5' : 'border-border bg-card'}`}>
+                    <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                            <span className="font-medium text-sm text-zinc-200">{tweet.author}</span>
+                            {tweet.author_name && <span className="text-xs text-muted">{tweet.author_name}</span>}
+                        </div>
+                        <div className="flex items-center gap-2">
+                            {tweet.must_read && <span className="text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full">{'\u5FC5\u770B'}</span>}
+                            <span className="text-xs text-muted">{tweet.created_at}</span>
+                        </div>
+                    </div>
+                    {tweet.summary && <p className="text-sm text-zinc-300 mb-2">{tweet.summary}</p>}
+                    <p className="text-xs text-muted line-clamp-3">{tweet.text}</p>
+                    <div className="flex gap-4 mt-3 text-xs text-muted">
+                        <span>{'\u2665'} {tweet.engagement.likes.toLocaleString()}</span>
+                        <span>{'\u{1F516}'} {tweet.engagement.bookmarks.toLocaleString()}</span>
+                        <span>{'\u{1F441}'} {tweet.engagement.views.toLocaleString()}</span>
+                    </div>
+                </a>
+            );
+        }
+
+        function TopicSection({ topic }) {
+            return (
+                <section className="mb-8">
+                    <div className="flex items-center gap-3 mb-3">
+                        <h2 className="text-xl font-bold">{topic.headline}</h2>
+                        <VibeBadge vibe={topic.vibe} />
+                        <span className="text-sm text-muted">{topic.tweets.length} tweets</span>
+                    </div>
+                    <p className="text-sm text-zinc-300 mb-4 leading-relaxed">{topic.commentary}</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {topic.tweets.map(t => <TweetCard key={t.id} tweet={t} />)}
+                    </div>
+                </section>
+            );
+        }
+
+        function App() {
+            return (
+                <div className="max-w-4xl mx-auto px-4 py-8">
+                    <header className="mb-8">
+                        <h1 className="text-3xl font-bold mb-1">Twitter Insights Digest</h1>
+                        <p className="text-muted">{data.period_label}</p>
+                        <div className="flex gap-4 mt-2 text-sm text-muted">
+                            <span>{data.stats.total_tweets} tweets</span>
+                            <span>{data.stats.total_authors} authors</span>
+                        </div>
+                    </header>
+
+                    <div className="p-6 rounded-xl border border-border bg-card mb-8">
+                        <h2 className="text-sm font-medium text-muted mb-2 uppercase tracking-wide">TL;DR</h2>
+                        <p className="text-lg text-zinc-100 leading-relaxed">{data.tldr}</p>
+                    </div>
+
+                    {data.topics.map(t => <TopicSection key={t.category} topic={t} />)}
+
+                    {data.hot_take && (
+                        <div className="p-6 rounded-xl border border-orange-500/30 bg-orange-500/5 mt-8 mb-8">
+                            <h2 className="text-sm font-medium text-orange-400 mb-2 uppercase tracking-wide">{'\u{1F336}\uFE0F'} Hot Take</h2>
+                            <p className="text-zinc-100 leading-relaxed">{data.hot_take}</p>
+                        </div>
+                    )}
+
+                    <footer className="text-center text-xs text-muted mt-12 pb-8">
+                        Generated by ti digest {'\u00B7'} {data.generated_at}
+                    </footer>
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
