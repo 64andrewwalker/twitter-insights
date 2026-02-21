@@ -243,8 +243,16 @@ def classify_batch(
 
     try:
         result = _run_codebridge(prompt, engine=engine, model=model)
-        summary = result.get("summary", "")
-        classifications = _parse_classifications(summary)
+        # Prefer full output.txt when available (codebridge ≥0.1.3)
+        run_id = result.get("run_id", "")
+        output_text = None
+        if run_id and result.get("output_path"):
+            output_file = Path(PROJECT_DIR) / ".runs" / run_id / result["output_path"]
+            if output_file.exists():
+                output_text = output_file.read_text()
+        if not output_text:
+            output_text = result.get("summary", "")
+        classifications = _parse_classifications(output_text)
         success, errors = _apply_classifications(conn, classifications)
         return {
             "batch_size": len(tweets),
