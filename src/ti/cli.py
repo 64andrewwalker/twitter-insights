@@ -17,7 +17,9 @@ app = typer.Typer(
 console = Console()
 
 # Common option factories for consistent --format/--limit/--offset on every command
-_opt_format = lambda: typer.Option(OutputFormat.HUMAN, "--format", "-f", help="Output format")
+_opt_format = lambda: typer.Option(
+    OutputFormat.HUMAN, "--format", "-f", help="Output format"
+)
 _opt_limit = lambda: typer.Option(20, "--limit", "-l", help="Max results")
 _opt_offset = lambda: typer.Option(0, "--offset", help="Skip N results")
 
@@ -44,7 +46,9 @@ def _print_output(output: str, fmt: OutputFormat):
 @app.command()
 def sync(
     file: Path = typer.Argument(None, help="Path to Twitter JSON export file"),
-    dir: Path = typer.Option(None, "--dir", "-d", help="Import all *.json files from directory"),
+    dir: Path = typer.Option(
+        None, "--dir", "-d", help="Import all *.json files from directory"
+    ),
 ):
     """Import tweets from a JSON export file or directory."""
     from ti.sync import sync_file
@@ -113,7 +117,9 @@ def stats():
     ).fetchone()
 
     console.print("[bold]Twitter Insights Database[/bold]")
-    console.print(f"  Tweets: {total} ({classified} classified, {unclassified} pending)")
+    console.print(
+        f"  Tweets: {total} ({classified} classified, {unclassified} pending)"
+    )
     console.print(f"  Authors: {users}")
     if dates[0]:
         console.print(f"  Date range: {dates[0]} -> {dates[1]}")
@@ -142,8 +148,12 @@ def search(
         raise typer.Exit()
 
     output = format_results(
-        command="search", results=results, total=total,
-        fmt=format, query=query, offset=offset,
+        command="search",
+        results=results,
+        total=total,
+        fmt=format,
+        query=query,
+        offset=offset,
     )
     _print_output(output, format)
 
@@ -167,8 +177,12 @@ def tag(
         raise typer.Exit()
 
     output = format_results(
-        command="tag", results=results, total=total,
-        fmt=format, query=name, offset=offset,
+        command="tag",
+        results=results,
+        total=total,
+        fmt=format,
+        query=name,
+        offset=offset,
     )
     _print_output(output, format)
 
@@ -225,8 +239,12 @@ def author(
         raise typer.Exit()
 
     output = format_results(
-        command="author", results=results, total=total,
-        fmt=format, query=handle.lstrip("@"), offset=offset,
+        command="author",
+        results=results,
+        total=total,
+        fmt=format,
+        query=handle.lstrip("@"),
+        offset=offset,
     )
     _print_output(output, format)
 
@@ -248,7 +266,10 @@ def show(
         raise typer.Exit(1)
 
     output = format_results(
-        command="show", results=[result], total=1, fmt=format,
+        command="show",
+        results=[result],
+        total=1,
+        fmt=format,
     )
     _print_output(output, format)
 
@@ -271,8 +292,11 @@ def latest(
         raise typer.Exit()
 
     output = format_results(
-        command="latest", results=results, total=total,
-        fmt=format, offset=offset,
+        command="latest",
+        results=results,
+        total=total,
+        fmt=format,
+        offset=offset,
     )
     _print_output(output, format)
 
@@ -280,10 +304,16 @@ def latest(
 @app.command()
 def classify(
     batch_size: int = typer.Option(15, "--batch-size", "-b", help="Tweets per batch"),
-    retry_failed: bool = typer.Option(False, "--retry", help="Retry failed classifications"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be classified"),
+    retry_failed: bool = typer.Option(
+        False, "--retry", help="Retry failed classifications"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Show what would be classified"
+    ),
+    engine: str = typer.Option("kimi-code", "--engine", "-e", help="codebridge engine"),
+    model: str = typer.Option("", "--model", "-m", help="Model name (engine-specific)"),
 ):
-    """Classify unclassified tweets using AI (codebridge + Haiku)."""
+    """Classify unclassified tweets using AI via codebridge."""
     from ti.classify import get_unclassified, classify_batch
     from ti.db import rebuild_fts
 
@@ -304,19 +334,24 @@ def classify(
         conn.close()
         return
 
-    console.print(f"[bold]Classifying {len(tweets)} tweets in batches of {batch_size}...[/bold]")
+    console.print(
+        f"[bold]Classifying {len(tweets)} tweets in batches of {batch_size} "
+        f"(engine={engine}, model={model or 'default'})...[/bold]"
+    )
 
     total_classified = 0
     total_errors = 0
 
     for i in range(0, len(tweets), batch_size):
-        batch = tweets[i:i + batch_size]
+        batch = tweets[i : i + batch_size]
         batch_num = i // batch_size + 1
         total_batches = (len(tweets) + batch_size - 1) // batch_size
 
-        console.print(f"\n[cyan]Batch {batch_num}/{total_batches}[/cyan] ({len(batch)} tweets)")
+        console.print(
+            f"\n[cyan]Batch {batch_num}/{total_batches}[/cyan] ({len(batch)} tweets)"
+        )
 
-        result = classify_batch(conn, batch)
+        result = classify_batch(conn, batch, engine=engine, model=model)
         total_classified += result.get("classified", 0)
         total_errors += result.get("errors", 0)
 
@@ -331,7 +366,9 @@ def classify(
     # Rebuild FTS after all batches
     rebuild_fts(conn)
 
-    console.print(f"\n[bold green]Done![/bold green] {total_classified} classified, {total_errors} errors")
+    console.print(
+        f"\n[bold green]Done![/bold green] {total_classified} classified, {total_errors} errors"
+    )
     conn.close()
 
 

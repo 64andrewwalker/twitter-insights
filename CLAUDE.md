@@ -21,9 +21,10 @@ ti tags
 # Show single tweet
 ti show <tweet_id>
 
-# Classify unclassified tweets (uses codebridge + Haiku)
+# Classify unclassified tweets (default: kimi-code engine)
 ti classify --dry-run
-ti classify --batch-size 15
+ti classify -b 5                          # kimi-code, safe batch size
+ti classify -e claude-code -m haiku       # use Haiku instead
 
 # Stats
 ti stats
@@ -52,7 +53,7 @@ JSON envelope: `{ command, total, returned, offset, results: [...] }`
 - `src/ti/cli.py` — CLI commands
 - `src/ti/db.py` — Schema, FTS5 trigram
 - `src/ti/search.py` — Query functions
-- `src/ti/classify.py` — codebridge + Haiku classification
+- `src/ti/classify.py` — AI classification via codebridge (kimi-code/claude-code)
 - `src/ti/taxonomy.py` — 32 tags in 7 categories
 - `src/ti/output.py` — JSON/human/brief formatting
 

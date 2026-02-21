@@ -39,8 +39,10 @@ def _build_prompt(tweets: list[dict]) -> str:
     taxonomy_text = _build_taxonomy_text()
 
     tweets_json = json.dumps(
-        [{"id": t["id"], "text": t["full_text"], "author": t["screen_name"]}
-         for t in tweets],
+        [
+            {"id": t["id"], "text": t["full_text"], "author": t["screen_name"]}
+            for t in tweets
+        ],
         ensure_ascii=False,
         indent=2,
     )
@@ -83,18 +85,30 @@ Rules:
 - Output ONLY the JSON array, no other text"""
 
 
-def _run_codebridge(prompt: str) -> dict:
+def _run_codebridge(
+    prompt: str,
+    engine: str = "claude-code",
+    model: str = "haiku",
+) -> dict:
     """Submit classification task to codebridge and return result."""
+    cmd = [
+        "codebridge",
+        "submit",
+        "--engine",
+        engine,
+        "--workspace",
+        PROJECT_DIR,
+        "--intent",
+        "ops",
+        "--message",
+        prompt,
+        "--wait",
+    ]
+    if model:
+        cmd.extend(["--model", model])
+
     result = subprocess.run(
-        [
-            "codebridge", "submit",
-            "--engine", "claude-code",
-            "--model", "haiku",
-            "--workspace", PROJECT_DIR,
-            "--intent", "ops",
-            "--message", prompt,
-            "--wait",
-        ],
+        cmd,
         capture_output=True,
         text=True,
         timeout=300,
@@ -123,7 +137,7 @@ def _parse_classifications(summary: str) -> list[dict]:
         pass
 
     # Try to extract from markdown code block
-    match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', text, re.DOTALL)
+    match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
     if match:
         try:
             data = json.loads(match.group(1))
@@ -133,11 +147,11 @@ def _parse_classifications(summary: str) -> list[dict]:
             pass
 
     # Try to find array brackets
-    start = text.find('[')
-    end = text.rfind(']')
+    start = text.find("[")
+    end = text.rfind("]")
     if start != -1 and end != -1:
         try:
-            data = json.loads(text[start:end + 1])
+            data = json.loads(text[start : end + 1])
             if isinstance(data, list):
                 return data
         except json.JSONDecodeError:
@@ -146,7 +160,9 @@ def _parse_classifications(summary: str) -> list[dict]:
     raise ValueError(f"Could not parse classifications from: {text[:200]}")
 
 
-def _apply_classifications(conn: sqlite3.Connection, classifications: list[dict]) -> tuple[int, int]:
+def _apply_classifications(
+    conn: sqlite3.Connection, classifications: list[dict]
+) -> tuple[int, int]:
     """Write classification results to DB. Returns (success_count, error_count)."""
     success = 0
     errors = 0
@@ -195,22 +211,20 @@ def _apply_classifications(conn: sqlite3.Connection, classifications: list[dict]
     return success, errors
 
 
-def get_unclassified(conn: sqlite3.Connection, retry_failed: bool = False) -> list[dict]:
+def get_unclassified(
+    conn: sqlite3.Connection, retry_failed: bool = False
+) -> list[dict]:
     """Get tweets that need classification."""
     if retry_failed:
-        rows = conn.execute(
-            """SELECT t.id, t.full_text, u.screen_name
+        rows = conn.execute("""SELECT t.id, t.full_text, u.screen_name
                FROM tweets t JOIN users u ON t.user_id = u.user_id
                WHERE t.primary_tag IS NULL AND t.classification_error IS NOT NULL
-               ORDER BY t.created_at"""
-        ).fetchall()
+               ORDER BY t.created_at""").fetchall()
     else:
-        rows = conn.execute(
-            """SELECT t.id, t.full_text, u.screen_name
+        rows = conn.execute("""SELECT t.id, t.full_text, u.screen_name
                FROM tweets t JOIN users u ON t.user_id = u.user_id
                WHERE t.primary_tag IS NULL AND t.classification_error IS NULL
-               ORDER BY t.created_at"""
-        ).fetchall()
+               ORDER BY t.created_at""").fetchall()
     return [dict(r) for r in rows]
 
 
@@ -218,6 +232,8 @@ def classify_batch(
     conn: sqlite3.Connection,
     tweets: list[dict],
     dry_run: bool = False,
+    engine: str = "claude-code",
+    model: str = "haiku",
 ) -> dict:
     """Classify a batch of tweets. Returns stats dict."""
     if dry_run:
@@ -226,7 +242,7 @@ def classify_batch(
     prompt = _build_prompt(tweets)
 
     try:
-        result = _run_codebridge(prompt)
+        result = _run_codebridge(prompt, engine=engine, model=model)
         summary = result.get("summary", "")
         classifications = _parse_classifications(summary)
         success, errors = _apply_classifications(conn, classifications)
