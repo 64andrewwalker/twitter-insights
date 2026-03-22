@@ -93,3 +93,16 @@ def test_mask_api_key():
     assert mask_api_key("sk-abcdefghijklmnopqrstuvwxyz123456") == "****3456"
     assert mask_api_key("") == ""
     assert mask_api_key("short") == "****hort"
+
+
+def test_get_connection_uses_resolved_path(tmp_path, monkeypatch):
+    from ti.db import get_connection, init_db
+
+    db_file = tmp_path / "resolved.db"
+    monkeypatch.setenv("TI_DB_PATH", str(db_file))
+    conn = get_connection()
+    init_db(conn)
+    count = conn.execute("SELECT COUNT(*) FROM tags").fetchone()[0]
+    conn.close()
+    assert count == 32
+    assert db_file.exists()
