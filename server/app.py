@@ -355,9 +355,11 @@ def create_app(db_path: Path | None = None) -> FastAPI:
                 detail={"error": "validation_failed", "errors": errors},
             )
 
+        restore_ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
         with pool.write_lock:
             temp_path.rename(pool.db_path)
             pool.swap_db()
+            pool.last_push_at = restore_ts
 
         return {"restored_version": version}
 

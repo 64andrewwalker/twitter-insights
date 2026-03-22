@@ -25,6 +25,7 @@ def upload_db(
     api_url: str,
     api_key: str,
     force: bool = False,
+    last_version: str | None = None,
     timeout: int = 30,
 ) -> dict:
     """Upload a snapshot to the server. Returns server response dict."""
@@ -32,6 +33,8 @@ def upload_db(
     headers = {"X-API-Key": api_key}
     if force:
         headers["X-TI-Force-Push"] = "true"
+    if last_version:
+        headers["X-TI-DB-Version"] = last_version
 
     with open(snapshot_path, "rb") as f:
         resp = requests.post(

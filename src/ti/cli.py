@@ -45,7 +45,22 @@ def main():
 
 
 def _get_db():
-    conn = get_connection()
+    from ti.config import resolve_db_path
+
+    db_path = resolve_db_path()
+    if not db_path.exists():
+        import sys
+
+        print(
+            "No database found. Either:\n"
+            "  1. Import data:  ti sync <file.json>\n"
+            "  2. Use remote:   ti config set mode remote\n"
+            "                   ti config set api_url <url>\n"
+            "                   ti config set api_key <key>",
+            file=sys.stderr,
+        )
+        raise typer.Exit(1)
+    conn = get_connection(db_path)
     init_db(conn)
     return conn
 
