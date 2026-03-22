@@ -19,4 +19,4 @@ COPY server/ server/
 
 EXPOSE 8000
 
-CMD ["uvicorn", "server.app:create_app", "--host", "0.0.0.0", "--port", "8000", "--factory"]
+CMD uvicorn server.app:create_app --host 0.0.0.0 --port ${PORT:-8000} --factory
