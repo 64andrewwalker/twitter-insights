@@ -4,6 +4,7 @@ from pathlib import Path
 import click
 import typer
 from rich.console import Console
+from ti.config import load_config, save_config, mask_api_key, _VALID_KEYS, _VALID_MODES
 from ti.db import get_connection, init_db
 from ti.output import OutputFormat, format_results
 
@@ -14,6 +15,14 @@ app = typer.Typer(
     invoke_without_command=True,
 )
 console = Console()
+
+# Subcommand groups
+config_app = typer.Typer(
+    name="config", help="Manage ti configuration", no_args_is_help=True
+)
+db_app = typer.Typer(name="db", help="Database management", no_args_is_help=True)
+app.add_typer(config_app)
+app.add_typer(db_app)
 
 # Common option factories for consistent --format/--limit/--offset on every command
 _opt_format = lambda: typer.Option(
@@ -40,6 +49,71 @@ def _print_output(output: str, fmt: OutputFormat):
         print(output)
     else:
         console.print(output, highlight=False)
+
+
+@config_app.command("set")
+def config_set(
+    key: str = typer.Argument(..., help="Config key (mode, api_url, api_key, db_path)"),
+    value: str = typer.Argument(..., help="Config value"),
+):
+    """Set a configuration value."""
+    if key not in _VALID_KEYS:
+        console.print(
+            f"[red]Invalid key: {key}. Valid: {', '.join(sorted(_VALID_KEYS))}[/red]"
+        )
+        raise typer.Exit(1)
+    if key == "mode" and value not in _VALID_MODES:
+        console.print(
+            f"[red]Invalid mode: {value}. Valid: {', '.join(sorted(_VALID_MODES))}[/red]"
+        )
+        raise typer.Exit(1)
+
+    cfg = load_config()
+    cfg[key] = value if value != "null" else None
+    save_config(cfg)
+    display = mask_api_key(value) if key == "api_key" else value
+    console.print(f"[green]{key}[/green] = {display}")
+
+
+@config_app.command("show")
+def config_show():
+    """Show current configuration."""
+    cfg = load_config()
+    for k, v in cfg.items():
+        display = mask_api_key(v) if k == "api_key" and v else v
+        console.print(f"  {k}: {display}")
+
+
+@db_app.command("push")
+def db_push(
+    force: bool = typer.Option(
+        False, "--force", help="Force push even if remote is newer"
+    ),
+):
+    """Push local database to remote server."""
+    import sys
+
+    from ti.config import resolve_db_path
+    from ti.push import push_db
+
+    cfg = load_config()
+    if not cfg.get("api_url") or not cfg.get("api_key"):
+        console.print(
+            "[red]Configure remote first: ti config set api_url/api_key[/red]"
+        )
+        raise typer.Exit(1)
+
+    db_path = resolve_db_path()
+    if not db_path.exists():
+        console.print(f"[red]Database not found: {db_path}[/red]")
+        raise typer.Exit(1)
+
+    try:
+        result = push_db(db_path, cfg["api_url"], cfg["api_key"], force=force)
+        print(json.dumps(result, indent=2), file=sys.stderr)
+    except Exception as e:
+        console.print(f"[red]Push failed: {e}[/red]", highlight=False)
+        raise typer.Exit(1)
 
 
 @app.command()
