@@ -26,12 +26,22 @@ def _get(path, params=None, auth=True):
 
 
 def test_health_unauthenticated():
-    # Health endpoint works without auth (may need retry on proxy warmup)
-    resp = _get("/health", auth=True)  # auth header is ignored by /health anyway
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["status"] == "ok"
-    assert data["db_ready"] is True
+    # Health endpoint works without auth; retry once on transient proxy/network issues
+    import time
+
+    for attempt in range(2):
+        try:
+            resp = _get("/health", auth=False)
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["status"] == "ok"
+            assert data["db_ready"] is True
+            return
+        except Exception:
+            if attempt == 0:
+                time.sleep(2)
+            else:
+                raise
 
 
 def test_health_has_no_cache():
