@@ -176,3 +176,149 @@ def test_show_not_found(server_app):
 def test_cache_control_header(server_app):
     resp = server_app.get("/v1/stats", headers={"X-API-Key": "a" * 32})
     assert resp.headers.get("Cache-Control") == "no-store"
+
+
+def test_validate_db_missing_columns(tmp_path):
+    """Push rejects DB with missing columns on tweets."""
+    import sqlite3
+    from server.validate import validate_pushed_db
+
+    db_path = tmp_path / "missing-cols.db"
+    conn = sqlite3.connect(str(db_path))
+    # Create tweets table missing primary_tag and other required columns
+    conn.execute(
+        "CREATE TABLE users (user_id TEXT PRIMARY KEY, screen_name TEXT, name TEXT)"
+    )
+    conn.execute(
+        "CREATE TABLE tweets (id TEXT PRIMARY KEY, created_at TEXT, full_text TEXT)"
+    )
+    conn.execute("CREATE TABLE tags (id INTEGER PRIMARY KEY, name TEXT, category TEXT)")
+    conn.execute("CREATE TABLE tweet_tags (tweet_id TEXT, tag_id INTEGER)")
+    conn.execute("CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT)")
+    conn.execute("CREATE TABLE import_log (id INTEGER PRIMARY KEY)")
+    conn.close()
+
+    errors = validate_pushed_db(db_path)
+    assert any("Missing columns" in e for e in errors)
+
+
+def test_validate_db_no_fts(tmp_path):
+    """Push rejects DB where FTS5 table is missing."""
+    import sqlite3
+    from server.validate import validate_pushed_db
+    from ti.db import SCHEMA_SQL
+
+    db_path = tmp_path / "no-fts.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.executescript(SCHEMA_SQL)  # tables + indexes, but no FTS
+    conn.close()
+
+    errors = validate_pushed_db(db_path)
+    assert any("FTS" in e for e in errors)
+
+
+def test_validate_db_legacy_no_schema_version(tmp_path):
+    """Push accepts legacy DB without schema_version in metadata."""
+    import sqlite3
+    from server.validate import validate_pushed_db
+    from ti.db import init_db, rebuild_fts
+
+    db_path = tmp_path / "legacy.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
+    init_db(conn)
+    conn.execute(
+        "INSERT INTO users (user_id, screen_name, name) VALUES ('u1', 'test', 'Test')"
+    )
+    conn.execute(
+        "INSERT INTO tweets (id, created_at, full_text, user_id) VALUES ('t1', '2026-01-01', 'hi', 'u1')"
+    )
+    rebuild_fts(conn)
+    # No schema_version in metadata — should be accepted
+    conn.close()
+
+    errors = validate_pushed_db(db_path)
+    assert errors == []
+
+
+def test_validate_db_schema_version_too_new(tmp_path):
+    """Push rejects DB with schema version newer than expected."""
+    import sqlite3
+    from server.validate import validate_pushed_db
+    from ti.db import init_db, rebuild_fts
+
+    db_path = tmp_path / "new-schema.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
+    init_db(conn)
+    conn.execute(
+        "INSERT INTO users (user_id, screen_name, name) VALUES ('u1', 'test', 'Test')"
+    )
+    conn.execute(
+        "INSERT INTO tweets (id, created_at, full_text, user_id) VALUES ('t1', '2026-01-01', 'hi', 'u1')"
+    )
+    rebuild_fts(conn)
+    conn.execute(
+        "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '99')"
+    )
+    conn.commit()
+    conn.close()
+
+    errors = validate_pushed_db(db_path)
+    assert any("Upgrade server" in e for e in errors)
+
+
+def test_server_503_no_db(tmp_path, monkeypatch):
+    """Queries return 503 when DB is not initialized."""
+    monkeypatch.setenv("TI_API_KEY", "a" * 32)
+    monkeypatch.delenv("TI_API_KEY_OLD", raising=False)
+
+    no_db_path = tmp_path / "nonexistent.db"  # file does not exist
+    from server.app import create_app
+
+    app = create_app(db_path=no_db_path)
+
+    from fastapi.testclient import TestClient
+
+    client = TestClient(app)
+
+    # Health should work but show db_ready: false
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    assert resp.json()["db_ready"] is False
+
+    # Query endpoints should return 503
+    resp = client.get("/v1/stats", headers={"X-API-Key": "a" * 32})
+    assert resp.status_code == 503
+
+
+def test_server_api_key_too_short(tmp_path, monkeypatch):
+    """Server rejects API keys shorter than 32 chars at startup."""
+    monkeypatch.setenv("TI_API_KEY", "short")
+    monkeypatch.delenv("TI_API_KEY_OLD", raising=False)
+
+    from server.app import create_app
+
+    with pytest.raises(RuntimeError, match="at least 32 characters"):
+        create_app(db_path=tmp_path / "test.db")
+
+
+def test_server_tag_endpoint(server_app):
+    """GET /v1/tag/{name} returns filtered tweets."""
+    resp = server_app.get(
+        "/v1/tag/claude-code-workflow", headers={"X-API-Key": "a" * 32}
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["command"] == "tag"
+
+
+def test_server_author_endpoint(server_app):
+    """GET /v1/author/{handle} returns filtered tweets."""
+    resp = server_app.get("/v1/author/alice", headers={"X-API-Key": "a" * 32})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["command"] == "author"
+    assert data["total"] >= 1
