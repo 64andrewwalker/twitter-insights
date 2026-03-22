@@ -22,6 +22,17 @@ def create_app(db_path: Path | None = None) -> FastAPI:
     app = FastAPI(title="ti-server", docs_url=None, redoc_url=None)
     pool = DBManager(db_path)
 
+    # Validate API key length at startup (spec: minimum 32 chars)
+    from server.auth import get_api_keys
+
+    startup_keys = get_api_keys()
+    if startup_keys:
+        for k in startup_keys:
+            if len(k) < 32:
+                raise RuntimeError(
+                    f"API key must be at least 32 characters (got {len(k)})"
+                )
+
     limiter = Limiter(key_func=_rate_limit_key)
     app.state.limiter = limiter
 
@@ -102,6 +113,14 @@ def create_app(db_path: Path | None = None) -> FastAPI:
         x_api_key: str | None = Header(None),
     ):
         require_auth(x_api_key)
+        if sort not in ("relevant", "recent", "popular"):
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "bad_request",
+                    "message": "sort must be one of: relevant, recent, popular",
+                },
+            )
         limit = max(1, min(100, limit))
         offset = max(0, offset)
         conn = get_conn()
