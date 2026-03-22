@@ -12,17 +12,22 @@ class RemoteError(Exception):
 class RemoteClient:
     """HTTP client that talks to ti-server's /v1/ API."""
 
-    def __init__(self, api_url: str, api_key: str, timeout: int = 15):
+    def __init__(
+        self, api_url: str, api_key: str, timeout: int = 15, use_proxy: bool = True
+    ):
         self.base_url = api_url.rstrip("/")
         self.api_key = api_key
         self.timeout = timeout
+        self._session = requests.Session()
+        if not use_proxy:
+            self._session.trust_env = False  # bypass system proxy
 
     def _headers(self) -> dict:
         return {"X-API-Key": self.api_key}
 
     def _get(self, path: str, params: dict | None = None) -> dict:
         url = f"{self.base_url}{path}"
-        resp = requests.get(
+        resp = self._session.get(
             url, headers=self._headers(), params=params, timeout=self.timeout
         )
         resp.raise_for_status()
@@ -59,6 +64,8 @@ class RemoteClient:
     def db_restore(self, version: str | None = None) -> dict:
         url = f"{self.base_url}/v1/db/restore"
         params = {"version": version} if version else {}
-        resp = requests.post(url, headers=self._headers(), params=params, timeout=60)
+        resp = self._session.post(
+            url, headers=self._headers(), params=params, timeout=60
+        )
         resp.raise_for_status()
         return resp.json()

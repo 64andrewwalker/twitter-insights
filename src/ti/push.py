@@ -36,8 +36,9 @@ def upload_db(
     if last_version:
         headers["X-TI-DB-Version"] = last_version
 
+    session = requests.Session()
     with open(snapshot_path, "rb") as f:
-        resp = requests.post(
+        resp = session.post(
             url,
             files={"file": ("ti.db", f, "application/octet-stream")},
             headers=headers,

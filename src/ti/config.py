@@ -10,10 +10,12 @@ _DEFAULTS = {
     "api_url": "",
     "api_key": "",
     "db_path": None,
+    "proxy": "system",
 }
 
 _VALID_KEYS = set(_DEFAULTS.keys())
 _VALID_MODES = {"local", "remote"}
+_VALID_PROXY = {"system", "none"}
 
 
 def _config_path() -> Path:

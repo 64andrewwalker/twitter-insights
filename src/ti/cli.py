@@ -11,6 +11,7 @@ from ti.config import (
     mask_api_key,
     _VALID_KEYS,
     _VALID_MODES,
+    _VALID_PROXY,
 )
 from ti.db import get_connection, init_db
 from ti.output import OutputFormat, format_results
@@ -89,7 +90,8 @@ def _get_remote_client():
             "[red]Remote mode requires api_url and api_key. Run: ti config set api_url/api_key[/red]"
         )
         raise typer.Exit(1)
-    return RemoteClient(api_url, api_key)
+    use_proxy = cfg.get("proxy", "system") != "none"
+    return RemoteClient(api_url, api_key, use_proxy=use_proxy)
 
 
 def _local_only(command_name: str):
@@ -114,6 +116,11 @@ def config_set(
     if key == "mode" and value not in _VALID_MODES:
         console.print(
             f"[red]Invalid mode: {value}. Valid: {', '.join(sorted(_VALID_MODES))}[/red]"
+        )
+        raise typer.Exit(1)
+    if key == "proxy" and value not in _VALID_PROXY:
+        console.print(
+            f"[red]Invalid proxy: {value}. Valid: {', '.join(sorted(_VALID_PROXY))}[/red]"
         )
         raise typer.Exit(1)
 

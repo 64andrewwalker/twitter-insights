@@ -84,7 +84,10 @@ def test_upload_db_sends_correct_headers(tmp_path):
     mock_resp.json.return_value = {"version": "v1", "tweet_count": 0}
     mock_resp.raise_for_status.return_value = None
 
-    with patch("ti.push.requests.post", return_value=mock_resp) as mock_post:
+    with patch("ti.push.requests.Session") as MockSession:
+        mock_session = MagicMock()
+        mock_session.post.return_value = mock_resp
+        MockSession.return_value = mock_session
         upload_db(
             db_path,
             "https://example.com",
@@ -92,8 +95,8 @@ def test_upload_db_sends_correct_headers(tmp_path):
             force=True,
             last_version="2026-01-01",
         )
-        mock_post.assert_called_once()
-        call_kwargs = mock_post.call_args[1]
+        mock_session.post.assert_called_once()
+        call_kwargs = mock_session.post.call_args[1]
         headers = call_kwargs["headers"]
         assert headers["X-API-Key"] == "my-key"
         assert headers["X-TI-Force-Push"] == "true"
