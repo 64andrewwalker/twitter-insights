@@ -56,6 +56,16 @@ def validate_pushed_db(db_path: Path) -> list[str]:
         except Exception as e:
             errors.append(f"FTS5 check failed: {e}")
 
+        # Smoke-check: verify FTS + joins work end-to-end
+        try:
+            conn.execute(
+                "SELECT t.id FROM tweets t "
+                "JOIN tweets_fts ON tweets_fts.rowid = t.rowid "
+                "LIMIT 1"
+            )
+        except Exception as e:
+            errors.append(f"FTS join smoke check failed: {e}")
+
         try:
             row = conn.execute(
                 "SELECT value FROM metadata WHERE key='schema_version'"

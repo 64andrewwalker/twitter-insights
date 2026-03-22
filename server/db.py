@@ -22,11 +22,13 @@ class DBManager:
         return self.db_path.exists()
 
     def get_connection(self) -> sqlite3.Connection:
+        """Get a read-only connection. Thread-safe via _lock."""
         if not self.db_ready:
             raise FileNotFoundError("Database not initialized")
-        if self._conn is None or not self._is_alive(self._conn):
-            self._conn = self._open()
-        return self._conn
+        with self._lock:
+            if self._conn is None or not self._is_alive(self._conn):
+                self._conn = self._open()
+            return self._conn
 
     def _open(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self.db_path), check_same_thread=False)

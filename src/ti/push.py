@@ -61,6 +61,7 @@ def push_db(
                     import time
 
                     time.sleep(2**attempt)
+        assert last_err is not None, "push_db: no attempts made"
         raise last_err
     finally:
         snapshot.unlink(missing_ok=True)
