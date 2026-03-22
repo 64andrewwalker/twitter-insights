@@ -4,7 +4,14 @@ from pathlib import Path
 import click
 import typer
 from rich.console import Console
-from ti.config import load_config, save_config, mask_api_key, _VALID_KEYS, _VALID_MODES
+from ti.config import (
+    load_config,
+    resolve_db_path,
+    save_config,
+    mask_api_key,
+    _VALID_KEYS,
+    _VALID_MODES,
+)
 from ti.db import get_connection, init_db
 from ti.output import OutputFormat, format_results
 
@@ -49,6 +56,33 @@ def _print_output(output: str, fmt: OutputFormat):
         print(output)
     else:
         console.print(output, highlight=False)
+
+
+def _is_remote() -> bool:
+    cfg = load_config()
+    return cfg.get("mode") == "remote"
+
+
+def _get_remote_client():
+    from ti.remote import RemoteClient
+
+    cfg = load_config()
+    api_url = cfg.get("api_url", "")
+    api_key = cfg.get("api_key", "")
+    if not api_url or not api_key:
+        console.print(
+            "[red]Remote mode requires api_url and api_key. Run: ti config set api_url/api_key[/red]"
+        )
+        raise typer.Exit(1)
+    return RemoteClient(api_url, api_key)
+
+
+def _local_only(command_name: str):
+    if _is_remote():
+        console.print(
+            f"[red]{command_name} is local-only. Switch mode: ti config set mode local[/red]"
+        )
+        raise typer.Exit(1)
 
 
 @config_app.command("set")
@@ -124,6 +158,7 @@ def sync(
     ),
 ):
     """Import tweets from a JSON export file or directory."""
+    _local_only("sync")
     from ti.sync import sync_file
 
     if dir is not None:
@@ -145,6 +180,11 @@ def sync(
                 f"  {f.name}: {result['inserted']} new, {result['updated']} updated"
             )
         conn.close()
+        # Auto-push to remote if configured
+        from ti.push import auto_push
+
+        cfg = load_config()
+        auto_push(cfg.get("api_url", ""), cfg.get("api_key", ""), resolve_db_path())
         console.print(
             f"[green]Total:[/green] {total_inserted} new, {total_updated} updated "
             f"from {len(files)} files"
@@ -163,6 +203,12 @@ def sync(
     result = sync_file(conn, file)
     conn.close()
 
+    # Auto-push to remote if configured
+    from ti.push import auto_push
+
+    cfg = load_config()
+    auto_push(cfg.get("api_url", ""), cfg.get("api_key", ""), resolve_db_path())
+
     console.print(
         f"[green]Synced {file.name}:[/green] "
         f"{result['inserted']} new, {result['updated']} updated "
@@ -175,6 +221,27 @@ def stats(
     format: OutputFormat = _opt_format(),
 ):
     """Show database statistics."""
+    if _is_remote():
+        client = _get_remote_client()
+        data = client.stats()
+        if format == OutputFormat.JSON:
+            print(json.dumps(data, ensure_ascii=False, indent=2))
+            return
+        stats_data = {
+            "total_tweets": data["total_tweets"],
+            "classified": data["classified"],
+            "unclassified": data["unclassified"],
+            "authors": data["authors"],
+            "date_range_from": data["date_range"]["from"],
+            "date_range_to": data["date_range"]["to"],
+            "latest_tweet_id": data.get("latest_tweet_id", ""),
+        }
+        from ti.output import format_stats
+
+        output = format_stats(stats_data, fmt=format)
+        _print_output(output, format)
+        return
+
     conn = _get_db()
     total = conn.execute("SELECT COUNT(*) FROM tweets").fetchone()[0]
     users = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
@@ -215,6 +282,18 @@ def search(
     offset: int = _opt_offset(),
 ):
     """Full-text search across all tweets."""
+    if _is_remote():
+        client = _get_remote_client()
+        data = client.search(query, sort=sort, limit=limit, offset=offset)
+        if format == OutputFormat.JSON:
+            print(json.dumps(data, ensure_ascii=False, indent=2))
+        else:
+            from ti.output import format_remote_results
+
+            output = format_remote_results(command="search", data=data, fmt=format)
+            _print_output(output, format)
+        return
+
     from ti.search import fts_search
 
     conn = _get_db()
@@ -244,6 +323,18 @@ def tag(
     offset: int = _opt_offset(),
 ):
     """Filter tweets by tag name."""
+    if _is_remote():
+        client = _get_remote_client()
+        data = client.tag(name, limit=limit, offset=offset)
+        if format == OutputFormat.JSON:
+            print(json.dumps(data, ensure_ascii=False, indent=2))
+        else:
+            from ti.output import format_remote_results
+
+            output = format_remote_results(command="tag", data=data, fmt=format)
+            _print_output(output, format)
+        return
+
     from ti.search import by_tag
 
     conn = _get_db()
@@ -270,6 +361,18 @@ def tags(
     format: OutputFormat = _opt_format(),
 ):
     """List all tags with tweet counts."""
+    if _is_remote():
+        client = _get_remote_client()
+        data = client.tags()
+        if format == OutputFormat.JSON:
+            print(json.dumps(data, ensure_ascii=False, indent=2))
+            return
+        from ti.output import format_tags
+
+        output = format_tags(data.get("results", []), fmt=format)
+        _print_output(output, format)
+        return
+
     from ti.search import list_tags
     from ti.output import format_tags
 
@@ -289,6 +392,18 @@ def author(
     offset: int = _opt_offset(),
 ):
     """Filter tweets by author handle."""
+    if _is_remote():
+        client = _get_remote_client()
+        data = client.author(handle, limit=limit, offset=offset)
+        if format == OutputFormat.JSON:
+            print(json.dumps(data, ensure_ascii=False, indent=2))
+        else:
+            from ti.output import format_remote_results
+
+            output = format_remote_results(command="author", data=data, fmt=format)
+            _print_output(output, format)
+        return
+
     from ti.search import by_author
 
     conn = _get_db()
@@ -316,6 +431,18 @@ def show(
     format: OutputFormat = _opt_format(),
 ):
     """Show a single tweet in full detail."""
+    if _is_remote():
+        client = _get_remote_client()
+        data = client.show(tweet_id)
+        if format == OutputFormat.JSON:
+            print(json.dumps(data, ensure_ascii=False, indent=2))
+        else:
+            from ti.output import format_remote_results
+
+            output = format_remote_results(command="show", data=data, fmt=format)
+            _print_output(output, format)
+        return
+
     from ti.search import show_tweet
 
     conn = _get_db()
@@ -342,6 +469,18 @@ def latest(
     offset: int = _opt_offset(),
 ):
     """Show the most recent tweets."""
+    if _is_remote():
+        client = _get_remote_client()
+        data = client.latest(n=n, offset=offset)
+        if format == OutputFormat.JSON:
+            print(json.dumps(data, ensure_ascii=False, indent=2))
+        else:
+            from ti.output import format_remote_results
+
+            output = format_remote_results(command="latest", data=data, fmt=format)
+            _print_output(output, format)
+        return
+
     from ti.search import latest_tweets
 
     conn = _get_db()
@@ -375,6 +514,7 @@ def classify(
     model: str = typer.Option("", "--model", "-m", help="Model name (engine-specific)"),
 ):
     """Classify unclassified tweets using AI via codebridge."""
+    _local_only("classify")
     from ti.classify import get_unclassified, classify_batch
     from ti.db import rebuild_fts
 
@@ -432,6 +572,12 @@ def classify(
     )
     conn.close()
 
+    # Auto-push to remote if configured
+    from ti.push import auto_push
+
+    cfg = load_config()
+    auto_push(cfg.get("api_url", ""), cfg.get("api_key", ""), resolve_db_path())
+
 
 @app.command()
 def digest(
@@ -458,6 +604,7 @@ def digest(
     model: str = typer.Option("", "--model", "-m", help="Model name (engine-specific)"),
 ):
     """Generate a visual digest of recent tweets with AI commentary."""
+    _local_only("digest")
     from ti.digest import (
         get_period_range,
         get_period_label,
