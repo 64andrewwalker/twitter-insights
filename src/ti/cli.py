@@ -4,8 +4,6 @@ from pathlib import Path
 import click
 import typer
 from rich.console import Console
-from rich.table import Table
-
 from ti.db import get_connection, init_db
 from ti.output import OutputFormat, format_results
 
@@ -99,7 +97,9 @@ def sync(
 
 
 @app.command()
-def stats():
+def stats(
+    format: OutputFormat = _opt_format(),
+):
     """Show database statistics."""
     conn = _get_db()
     total = conn.execute("SELECT COUNT(*) FROM tweets").fetchone()[0]
@@ -108,25 +108,28 @@ def stats():
         "SELECT COUNT(*) FROM tweets WHERE primary_tag IS NOT NULL"
     ).fetchone()[0]
     unclassified = total - classified
-
     dates = conn.execute(
         "SELECT MIN(created_at), MAX(created_at) FROM tweets"
     ).fetchone()
-
     latest_row = conn.execute(
         "SELECT value FROM metadata WHERE key='latest_tweet_id'"
     ).fetchone()
-
-    console.print("[bold]Twitter Insights Database[/bold]")
-    console.print(
-        f"  Tweets: {total} ({classified} classified, {unclassified} pending)"
-    )
-    console.print(f"  Authors: {users}")
-    if dates[0]:
-        console.print(f"  Date range: {dates[0]} -> {dates[1]}")
-    if latest_row:
-        console.print(f"  Latest tweet ID: {latest_row[0]}")
     conn.close()
+
+    stats_data = {
+        "total_tweets": total,
+        "classified": classified,
+        "unclassified": unclassified,
+        "authors": users,
+        "date_range_from": dates[0] or "",
+        "date_range_to": dates[1] or "",
+        "latest_tweet_id": latest_row[0] if latest_row else "",
+    }
+
+    from ti.output import format_stats
+
+    output = format_stats(stats_data, fmt=format)
+    _print_output(output, format)
 
 
 @app.command()
@@ -194,31 +197,14 @@ def tags(
 ):
     """List all tags with tweet counts."""
     from ti.search import list_tags
+    from ti.output import format_tags
 
     conn = _get_db()
     tag_list = list_tags(conn)
     conn.close()
 
-    if format == OutputFormat.JSON:
-        print(json.dumps({"command": "tags", "results": tag_list}, indent=2))
-        return
-
-    if format == OutputFormat.BRIEF:
-        for t in tag_list:
-            if t["count"] > 0:
-                print(f"{t['name']}: {t['count']}")
-        return
-
-    # Human format
-    table = Table(title="Tags", show_lines=False)
-    table.add_column("Category", style="cyan")
-    table.add_column("Tag", style="bold")
-    table.add_column("Tweets", justify="right")
-
-    for t in tag_list:
-        table.add_row(t["category"], t["name"], str(t["count"]))
-
-    console.print(table)
+    output = format_tags(tag_list, fmt=format)
+    _print_output(output, format)
 
 
 @app.command()
