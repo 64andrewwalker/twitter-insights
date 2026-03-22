@@ -150,6 +150,43 @@ def db_push(
         raise typer.Exit(1)
 
 
+@db_app.command("versions")
+def db_versions(
+    limit: int = typer.Option(10, "--limit", "-l", help="Max versions to show"),
+):
+    """List available database backup versions on R2."""
+    client = _get_remote_client()
+    try:
+        data = client.db_versions(limit=limit)
+        versions = data.get("versions", [])
+        if not versions:
+            console.print("[dim]No backups found[/dim]")
+            return
+        for v in versions:
+            console.print(f"  {v['version']}  ({v['size_bytes']:,} bytes)")
+    except Exception as e:
+        console.print(f"[red]Failed: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@db_app.command("restore")
+def db_restore(
+    version: str = typer.Argument(
+        None, help="Backup version (ISO timestamp). Latest if omitted."
+    ),
+):
+    """Restore database from an R2 backup."""
+    client = _get_remote_client()
+    try:
+        data = client.db_restore(version)
+        console.print(
+            f"[green]Restored version:[/green] {data.get('restored_version', 'unknown')}"
+        )
+    except Exception as e:
+        console.print(f"[red]Restore failed: {e}[/red]")
+        raise typer.Exit(1)
+
+
 @app.command()
 def sync(
     file: Path = typer.Argument(None, help="Path to Twitter JSON export file"),
