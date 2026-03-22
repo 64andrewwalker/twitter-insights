@@ -5,7 +5,7 @@
     "dockerfilePath": "server/Dockerfile"
   },
   "deploy": {
-    "startCommand": "uvicorn server.app:create_app --host 0.0.0.0 --port ${PORT:-8000} --factory",
+    "startCommand": "sh -c 'uvicorn server.app:create_app --host 0.0.0.0 --port ${PORT:-8000} --factory'",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 60
   }
