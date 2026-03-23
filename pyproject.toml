@@ -1,11 +1,21 @@
 [project]
-name = "twitter-insights"
-version = "0.1.0"
+name = "ti-insights"
+version = "0.2.0"
 description = "CLI tool for searching curated Twitter insights"
 requires-python = ">=3.12"
 dependencies = [
     "typer>=0.21",
     "rich>=13.0",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+server = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "python-multipart>=0.0.9",
+    "boto3>=1.34",
+    "slowapi>=0.1.9",
 ]
 
 [project.scripts]
@@ -20,4 +30,4 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
